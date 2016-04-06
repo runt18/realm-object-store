@@ -24,13 +24,13 @@ TEST_CASE("Results") {
     config.schema = std::make_unique<Schema>(Schema{
         {"object", "", {
             {"value", PropertyType::Int},
-            {"link", PropertyType::Object, "linked to object", false, false, true}
+            {"link", PropertyType::Object, "linked to object", "", false, false, true}
         }},
         {"other object", "", {
             {"value", PropertyType::Int}
         }},
         {"linking object", "", {
-            {"link", PropertyType::Object, "object", false, false, true}
+            {"link", PropertyType::Object, "object", "", false, false, true}
         }},
         {"linked to object", "", {
             {"value", PropertyType::Int}

@@ -339,8 +339,10 @@ public:
         return true;
     }
 
-    bool erase_rows(size_t row_ndx, size_t, size_t last_row_ndx, bool unordered)
+    bool erase_rows(size_t row_ndx, size_t rows_to_erase, size_t prior_size, bool unordered)
     {
+        REALM_ASSERT(unordered || rows_to_erase == 1);
+        size_t last_row_ndx = prior_size - 1;
         for (size_t i = 0; i < m_observers.size(); ++i) {
             auto& o = m_observers[i];
             if (o.table_ndx == current_table()) {
@@ -352,9 +354,22 @@ public:
                     o.row_ndx = row_ndx;
                 }
                 else if (!unordered && o.row_ndx > row_ndx) {
-                    o.row_ndx -= 1;
+                    o.row_ndx -= rows_to_erase;
                 }
             }
+        }
+        return true;
+    }
+
+    bool swap_rows(size_t row_ndx_1, size_t row_ndx_2)
+    {
+        for (auto& observer : m_observers) {
+            if (observer.table_ndx != current_table())
+                continue;
+            if (observer.row_ndx == row_ndx_1)
+                observer.row_ndx = row_ndx_2;
+            else if (observer.row_ndx == row_ndx_2)
+                observer.row_ndx = row_ndx_1;
         }
         return true;
     }

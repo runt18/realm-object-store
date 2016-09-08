@@ -1163,8 +1163,11 @@ TEST_CASE("Transaction log parsing: changeset calcuation") {
 
             bool modified(size_t index, size_t col)
             {
-                auto& changes = m_result[index].changes;
-                return changes.size() > col && changes[col].kind != BindingContext::ColumnInfo::Kind::None;
+                auto it = std::find_if(begin(m_result), end(m_result),
+                                       [=](auto&& change) { return (void *)(uintptr_t)index == change.info; });
+                if (it == m_result.end() || col >= it->changes.size())
+                    return false;
+                return it->changes[col].kind != BindingContext::ColumnInfo::Kind::None;
             }
 
             bool invalidated(size_t index)

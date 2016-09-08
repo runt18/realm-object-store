@@ -385,14 +385,29 @@ public:
 
     bool swap_rows(size_t row_ndx_1, size_t row_ndx_2)
     {
-        for (auto& observer : m_observers) {
-            if (observer.table_ndx != current_table())
-                continue;
-            if (observer.row_ndx == row_ndx_1)
-                observer.row_ndx = row_ndx_2;
-            else if (observer.row_ndx == row_ndx_2)
-                observer.row_ndx = row_ndx_1;
+        REALM_ASSERT(row_ndx_1 != row_ndx_2);
+        if (row_ndx_1 > row_ndx_2)
+            std::swap(row_ndx_1, row_ndx_2);
+
+        auto end = m_observers.end();
+        auto it_1 = lower_bound(begin(m_observers), end, ObserverState{current_table(), row_ndx_1, nullptr});
+        auto it_2 = lower_bound(it_1, end, ObserverState{current_table(), row_ndx_2, nullptr});
+        bool have_row_1 = it_1 != end && it_1->table_ndx == current_table() && it_1->row_ndx == row_ndx_1;
+        bool have_row_2 = it_2 != end && it_2->table_ndx == current_table() && it_2->row_ndx == row_ndx_2;
+
+        if (have_row_1 && have_row_2) {
+            std::swap(it_1->info, it_2->info);
+            std::swap(it_1->changes, it_2->changes);
         }
+        else if (have_row_1) {
+            it_1->row_ndx = row_ndx_2;
+            std::rotate(it_1, it_1 + 1, it_2);
+        }
+        else if (have_row_2) {
+            it_2->row_ndx = row_ndx_1;
+            std::rotate(it_1, it_2, end);
+        }
+
         return true;
     }
 

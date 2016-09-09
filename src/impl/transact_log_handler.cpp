@@ -411,6 +411,27 @@ public:
         return true;
     }
 
+    bool change_link_targets(size_t from, size_t to)
+    {
+        REALM_ASSERT(from != to);
+
+        auto end = m_observers.end();
+        auto from_it = lower_bound(begin(m_observers), end, ObserverState{current_table(), from, nullptr});
+        if (from_it == end || *from_it < ObserverState{current_table(), from, nullptr})
+            return true;
+
+        auto to_it = lower_bound(begin(m_observers), end, ObserverState{current_table(), to, nullptr});
+        // an observer for the subsuming row should not already exist
+        REALM_ASSERT_DEBUG(to_it == end || *to_it < (ObserverState{current_table(), to, nullptr}));
+
+        from_it->row_ndx = to;
+        if (from < to)
+            std::rotate(from_it, from_it + 1, to_it);
+        else
+            std::rotate(to_it, from_it, from_it + 1);
+        return true;
+    }
+
     bool clear_table()
     {
         for (size_t i = 0; i < m_observers.size(); ) {

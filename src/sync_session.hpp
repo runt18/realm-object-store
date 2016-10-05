@@ -25,6 +25,7 @@
 #include "sync_config.hpp"
 
 #include <mutex>
+#include <vector>
 
 namespace realm {
 
@@ -128,6 +129,11 @@ private:
 
     const State* m_state = nullptr;
     size_t m_pending_upload_threads = 0;
+    std::vector<std::function<void()>> m_pending_upload_callbacks;
+    std::vector<std::function<void()>> m_pending_download_callbacks;
+
+    void wait_for_deferred_upload_completion();
+    void wait_for_deferred_download_completion();
 
     SyncConfig m_config;
 

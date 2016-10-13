@@ -41,14 +41,14 @@ std::shared_ptr<SyncSession> sync_session(SyncServer& server, const std::string&
                                           FetchAccessToken&& fetch_access_token, ErrorHandler&& error_handler)
 {
     std::string url = server.base_url() + path;
-    SyncTestFile config(SyncConfig(user, url, SyncSessionStopPolicy::AfterChangesUploaded,
+    SyncTestFile config(SyncConfig{user, url, SyncSessionStopPolicy::AfterChangesUploaded,
                                    [&](const std::string& path, const SyncConfig& config) {
         EventLoop::main().perform([&] {
             auto session = SyncManager::shared().get_existing_active_session(path);
             auto token = fetch_access_token(path, config.realm_url);
             session->refresh_access_token(std::move(token), config.realm_url);
         });
-    }, std::forward<ErrorHandler>(error_handler)));
+    }, std::forward<ErrorHandler>(error_handler)});
 
     std::shared_ptr<SyncSession> session;
     {

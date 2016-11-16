@@ -45,7 +45,7 @@ bool validate_user_in_vector(std::vector<std::shared_ptr<SyncUser>> vector,
 
 }
 
-TEST_CASE("sync_manager: basic property APIs", "[sync]") {
+TEST_CASE("sync_manager: basic property APIs") {
     auto cleanup = util::make_scope_exit([=]() noexcept { SyncManager::shared().reset_for_testing(); });
     reset_test_directory(base_path);
     SyncManager::shared().configure_file_system(base_path, SyncManager::MetadataMode::NoMetadata);
@@ -72,7 +72,7 @@ TEST_CASE("sync_manager: basic property APIs", "[sync]") {
     }
 }
 
-TEST_CASE("sync_manager: `path_for_realm` API", "[sync]") {
+TEST_CASE("sync_manager: `path_for_realm` API") {
     auto cleanup = util::make_scope_exit([=]() noexcept { SyncManager::shared().reset_for_testing(); });
     reset_test_directory(base_path);
     SyncManager::shared().configure_file_system(base_path, SyncManager::MetadataMode::NoMetadata);
@@ -87,7 +87,7 @@ TEST_CASE("sync_manager: `path_for_realm` API", "[sync]") {
     }
 }
 
-TEST_CASE("sync_manager: persistent user state management", "[sync]") {
+TEST_CASE("sync_manager: persistent user state management") {
     auto cleanup = util::make_scope_exit([=]() noexcept { SyncManager::shared().reset_for_testing(); });
     reset_test_directory(base_path);
     auto file_manager = SyncFileManager(base_path);

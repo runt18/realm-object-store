@@ -350,7 +350,7 @@ void SyncManager::unregister_session(const std::string& path)
         return;
     auto it = m_inactive_sessions.find(path);
     REALM_ASSERT(it != m_inactive_sessions.end());
-    if (it->second->can_be_safely_destroyed())
+    if (it->second->is_inactive())
         m_inactive_sessions.erase(path);
 }
 

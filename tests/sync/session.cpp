@@ -24,9 +24,6 @@
 #include "sync/sync_config.hpp"
 #include "sync/sync_manager.hpp"
 #include "sync/sync_session.hpp"
-#include "sync/sync_user.hpp"
-
-#include <realm/util/scope_exit.hpp>
 
 #include <atomic>
 #include <chrono>
@@ -37,19 +34,14 @@ using namespace realm::util;
 
 template <typename FetchAccessToken, typename ErrorHandler>
 std::shared_ptr<SyncSession> sync_session(SyncServer& server, std::shared_ptr<SyncUser> user, const std::string& path,
-                                          FetchAccessToken&& fetch_access_token, ErrorHandler&& error_handler,
-                                          SyncSessionStopPolicy stop_policy=SyncSessionStopPolicy::AfterChangesUploaded,
-                                          std::string* on_disk_path=nullptr)
+                                          FetchAccessToken&& fetch_access_token, ErrorHandler&& error_handler)
 {
     std::string url = server.base_url() + path;
-    SyncTestFile config({user, url, std::move(stop_policy),
+    SyncTestFile config({user, url, SyncSessionStopPolicy::AfterChangesUploaded,
         [&](const std::string& path, const SyncConfig& config, std::shared_ptr<SyncSession> session) {
             auto token = fetch_access_token(path, config.realm_url);
             session->refresh_access_token(std::move(token), config.realm_url);
         }, std::forward<ErrorHandler>(error_handler)});
-    if (on_disk_path) {
-        *on_disk_path = config.path;
-    }
 
     std::shared_ptr<SyncSession> session;
     {
@@ -59,144 +51,7 @@ std::shared_ptr<SyncSession> sync_session(SyncServer& server, std::shared_ptr<Sy
     return session;
 }
 
-namespace {
-
-bool session_is_active(const SyncSession& session)
-{
-    return session.state() == SyncSession::PublicState::Active;
-}
-
-bool session_is_inactive(const SyncSession& session)
-{
-    return session.state() == SyncSession::PublicState::Inactive;
-}
-
-}
-
-TEST_CASE("SyncSession: management by SyncUser", "[sync]") {
-    auto cleanup = util::make_scope_exit([=]() noexcept { SyncManager::shared().reset_for_testing(); });
-    SyncServer server;
-    SyncManager::shared().configure_file_system("/tmp/", SyncManager::MetadataMode::NoMetadata);
-    const std::string realm_base_url = server.base_url();
-
-    SECTION("a SyncUser can properly retrieve its owned sessions") {
-        auto user = SyncManager::shared().get_user("user1a", "not_a_real_token");
-        auto session1 = sync_session(server, user, "/test1a-1",
-                                     [&](auto&, auto&) { return s_test_token; },
-                                     [&](auto, auto, auto) { });
-        auto session2 = sync_session(server, user, "/test1a-2",
-                                     [&](auto&, auto&) { return s_test_token; },
-                                     [&](auto, auto, auto) { });
-        EventLoop::main().run_until([&] { return session_is_active(*session1) && session_is_active(*session2); });
-
-        // Check the sessions on the SyncUser.
-        REQUIRE(user->all_sessions().size() == 2);
-        auto s1 = user->session_for_url(realm_base_url + "/test1a-1");
-        REQUIRE(s1);
-        CHECK(s1->config().realm_url == realm_base_url + "/test1a-1");
-        auto s2 = user->session_for_url(realm_base_url + "/test1a-2");
-        REQUIRE(s2);
-        CHECK(s2->config().realm_url == realm_base_url + "/test1a-2");
-    }
-
-    SECTION("a SyncUser properly unbinds its sessions upon logging out") {
-        auto user = SyncManager::shared().get_user("user1b", "not_a_real_token");
-        auto session1 = sync_session(server, user, "/test1b-1",
-                                     [&](auto&, auto&) { return s_test_token; },
-                                     [&](auto, auto, auto) { });
-        auto session2 = sync_session(server, user, "/test1b-2",
-                                     [&](auto&, auto&) { return s_test_token; },
-                                     [&](auto, auto, auto) { });
-        EventLoop::main().run_until([&] { return session_is_active(*session1) && session_is_active(*session2); });
-
-        // Log the user out.
-        user->log_out();
-        // The sessions should log themselves out.
-        EventLoop::main().run_until([&] { return session_is_inactive(*session1) && session_is_inactive(*session2); });
-        CHECK(user->all_sessions().size() == 0);
-    }
-
-    SECTION("a SyncUser defers binding new sessions until it is logged in") {
-        const std::string user_id = "user1c";
-        auto user = SyncManager::shared().get_user(user_id, "not_a_real_token");
-        user->log_out();
-        REQUIRE(user->state() == SyncUser::State::LoggedOut);
-        auto session1 = sync_session(server, user, "/test1c-1",
-                                     [&](auto&, auto&) { return s_test_token; },
-                                     [&](auto, auto, auto) { });
-        auto session2 = sync_session(server, user, "/test1c-2",
-                                     [&](auto&, auto&) { return s_test_token; },
-                                     [&](auto, auto, auto) { });
-        // Run the runloop many iterations to see if the sessions spuriously bind.
-        std::atomic<int> run_count(0);
-        EventLoop::main().run_until([&] { run_count++; return run_count >= 100; });
-        REQUIRE(session_is_inactive(*session1));
-        REQUIRE(session_is_inactive(*session2));
-        REQUIRE(user->all_sessions().size() == 0);
-        // Log the user back in via the sync manager.
-        user = SyncManager::shared().get_user(user_id, "not_a_real_token_either");
-        EventLoop::main().run_until([&] { return session_is_active(*session1) && session_is_active(*session2); });
-        REQUIRE(user->all_sessions().size() == 2);
-    }
-
-    SECTION("a SyncUser properly rebinds existing sessions upon logging back in") {
-        const std::string user_id = "user1d";
-        auto user = SyncManager::shared().get_user(user_id, "not_a_real_token");
-        auto session1 = sync_session(server, user, "/test1d-1",
-                                     [&](auto&, auto&) { return s_test_token; },
-                                     [&](auto, auto, auto) { });
-        auto session2 = sync_session(server, user, "/test1d-2",
-                                     [&](auto&, auto&) { return s_test_token; },
-                                     [&](auto, auto, auto) { });
-        // Make sure the sessions are bound.
-        EventLoop::main().run_until([&] { return session_is_active(*session1) && session_is_active(*session2); });
-        REQUIRE(user->all_sessions().size() == 2);
-        // Log the user out.
-        user->log_out();
-        REQUIRE(user->state() == SyncUser::State::LoggedOut);
-        // Run the runloop many iterations to see if the sessions spuriously rebind.
-        std::atomic<int> run_count(0);
-        EventLoop::main().run_until([&] { run_count++; return run_count >= 100; });
-        REQUIRE(session_is_inactive(*session1));
-        REQUIRE(session_is_inactive(*session2));
-        REQUIRE(user->all_sessions().size() == 0);
-        // Log the user back in via the sync manager.
-        user = SyncManager::shared().get_user(user_id, "not_a_real_token_either");
-        EventLoop::main().run_until([&] { return session_is_active(*session1) && session_is_active(*session2); });
-        REQUIRE(user->all_sessions().size() == 2);
-    }
-
-    SECTION("sessions that were destroyed can be properly recreated when requested again") {
-        const std::string path = "/test1e";
-        std::weak_ptr<SyncSession> weak_session;
-        std::string on_disk_path;
-        SyncConfig config;
-        auto user = SyncManager::shared().get_user("user1e", "not_a_real_token");
-        {
-            // Create the session within a nested scope, so we can control its lifetime.
-            auto session = sync_session(server, user, path,
-                                        [&](auto&, auto&) { return s_test_token; },
-                                        [&](auto, auto, auto) { },
-                                        SyncSessionStopPolicy::Immediately,
-                                        &on_disk_path);
-            weak_session = session;
-            config = session->config();
-            REQUIRE(on_disk_path.size() > 0);
-            REQUIRE(weak_session.lock());
-        }
-        // Session is dead, so the SyncUser's weak pointer to it should be nulled out.
-        REQUIRE(weak_session.expired());
-        // The next time we request it, it'll be created anew.
-        // The call to `get_session()` should result in `SyncUser::register_session()` being called.
-        auto session = SyncManager::shared().get_session(on_disk_path, config);
-        CHECK(session);
-        session = user->session_for_url(server.base_url() + path);
-        CHECK(session);
-    }
-}
-
 TEST_CASE("sync: log-in", "[sync]") {
-    auto cleanup = util::make_scope_exit([=]() noexcept { SyncManager::shared().reset_for_testing(); });
     SyncServer server;
     // Disable file-related functionality and metadata functionality for testing purposes.
     SyncManager::shared().configure_file_system("/tmp/", SyncManager::MetadataMode::NoMetadata);
@@ -210,7 +65,8 @@ TEST_CASE("sync: log-in", "[sync]") {
         std::atomic<bool> download_did_complete(false);
         session->wait_for_download_completion([&] { download_did_complete = true; });
         EventLoop::main().run_until([&] { return download_did_complete.load() || error_count > 0; });
-        CHECK(!session->is_in_error_state());
+        CHECK(session->is_valid());
+        CHECK(download_did_complete.load());
         CHECK(error_count == 0);
     }
 
@@ -221,7 +77,7 @@ TEST_CASE("sync: log-in", "[sync]") {
                                     [&](int, std::string, SyncSessionError) { ++error_count; });
 
         EventLoop::main().run_until([&] { return error_count > 0; });
-        CHECK(session->is_in_error_state());
+        CHECK(!session->is_valid());
     }
 
 #if 0
@@ -241,9 +97,14 @@ TEST_CASE("sync: log-in", "[sync]") {
         });
 
         EventLoop::main().run_until([&] { return error_count > 0; });
-        CHECK(session->is_in_error_state());
+        CHECK(!session->is_valid());
     }
 #endif
 
     // TODO: write a test that logs out a Realm with multiple sessions, then logs it back in?
+
+    // Cleanup
+    SyncManager::shared().reset_for_testing();
 }
+
+// TODO: tests investigating the interaction of SyncUser and SyncSession

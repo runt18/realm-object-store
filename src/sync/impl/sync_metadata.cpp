@@ -49,13 +49,13 @@ SyncMetadataManager::SyncMetadataManager(std::string path,
 {
     std::lock_guard<std::mutex> lock(m_metadata_lock);
 
-    auto nullable_string_property = [](std::string name)->Property {
+    auto make_nullable_string_property = [](std::string name)->Property {
         Property p = { std::move(name), PropertyType::String };
         p.is_nullable = true;
         return p;
     };
 
-    auto primary_key_property = [](std::string name)->Property {
+    auto make_primary_key = [](std::string name)->Property {
         Property p = { std::move(name), PropertyType::String };
         p.is_indexed = true;
         p.is_primary = true;
@@ -67,17 +67,17 @@ SyncMetadataManager::SyncMetadataManager(std::string path,
     Schema schema = {
         { c_sync_userMetadata,
             {
-                primary_key_property(c_sync_identity),
+                make_primary_key(c_sync_identity),
                 { c_sync_marked_for_removal, PropertyType::Bool },
-                nullable_string_property(c_sync_auth_server_url),
-                nullable_string_property(c_sync_user_token),
+                make_nullable_string_property(c_sync_auth_server_url),
+                make_nullable_string_property(c_sync_user_token),
             }
         },
         { c_sync_fileActionMetadata,
             {
-                primary_key_property(c_sync_original_name),
+                make_primary_key(c_sync_original_name),
                 { c_sync_action, PropertyType::Int },
-                nullable_string_property(c_sync_new_name),
+                make_nullable_string_property(c_sync_new_name),
             },
         }
     };

@@ -66,7 +66,7 @@ def doDockerBuild(String flavor, Boolean withCoverage, Boolean enableSync) {
         }
       }
       if(withCoverage) {
-        stash includes: "${label}.build/coverage.xml", name: label
+        stash includes: "${label}.build/coverage.xml", name: "coverage-${label}"
       }
     }
   }
@@ -81,7 +81,7 @@ def doBuild(String nodeSpec, String flavor, Boolean enableSync) {
       sshagent(['realm-ci-ssh']) {
         sh "./workflow/test_coverage.sh ${sync} && mv coverage.build ${label}.build"
       }
-      stash includes: "${label}.build/coverage.xml", name: label
+      stash includes: "${label}.build/coverage.xml", name: "coverage-${label}"
     }
   }
 }

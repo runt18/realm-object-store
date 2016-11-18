@@ -51,7 +51,7 @@ if (env.BRANCH_NAME == 'master') {
 
 def doDockerBuild(String flavor, Boolean withCoverage, Boolean enableSync) {
   def sync = enableSync ? "sync" : ""
-  def label = "coverage-${flavor}${enableSync ? '-sync' : ''}"
+  def label = "${flavor}${enableSync ? '-sync' : ''}"
   
   return {
     node('docker') {
@@ -76,7 +76,7 @@ def doDockerBuild(String flavor, Boolean withCoverage, Boolean enableSync) {
 
 def doBuild(String nodeSpec, String flavor, Boolean enableSync) {
   def sync = enableSync ? "sync" : ""
-  def label = "coverage-${flavor}${enableSync ? '-sync' : ''}"
+  def label = "${flavor}${enableSync ? '-sync' : ''}"
   return {
     node(nodeSpec) {
       getSourceArchive()

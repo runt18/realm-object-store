@@ -28,6 +28,7 @@ def buildDockerEnv(name, dockerfile='Dockerfile', extra_args='') {
 
 def publishReport(String label) {
   // Unfortunately, we cannot add a title or tag to individual coverage reports.
+  echo "Unstashing coverage-${label}"
   unstash("coverage-${label}")
   step([
     $class: 'CoberturaPublisher',
@@ -66,6 +67,7 @@ def doDockerBuild(String flavor, Boolean withCoverage, Boolean enableSync) {
         }
       }
       if(withCoverage) {
+        echo "Stashing coverage-${label}"
         stash includes: "${label}.build/coverage.xml", name: "coverage-${label}"
       }
     }
@@ -81,6 +83,7 @@ def doBuild(String nodeSpec, String flavor, Boolean enableSync) {
       sshagent(['realm-ci-ssh']) {
         sh "./workflow/test_coverage.sh ${sync} && mv coverage.build ${label}.build"
       }
+      echo "Stashing coverage-${label}"
       stash includes: "${label}.build/coverage.xml", name: "coverage-${label}"
     }
   }

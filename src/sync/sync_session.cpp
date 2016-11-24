@@ -210,24 +210,13 @@ struct sync_session_states::Active : public SyncSession::State {
 struct sync_session_states::Dying : public SyncSession::State {
     void enter_state(std::unique_lock<std::mutex>&, SyncSession& session) const override
     {
-        ++session.m_pending_upload_threads;
-        std::thread([session=&session] {
+        size_t current_death_count = ++session.m_death_count;
+        session.m_session->async_wait_for_upload_completion([session=&session, current_death_count](auto) {
             std::unique_lock<std::mutex> lock(session->m_state_mutex);
-            if (session->m_pending_upload_threads != 1) {
-                --session->m_pending_upload_threads;
-                return;
+            if (session->m_state == &State::dying && session->m_death_count == current_death_count) {
+                session->advance_state(lock, inactive);
             }
-
-            if (session->m_state != &State::dying) {
-                // The session was revived. Don't kill it.
-                --session->m_pending_upload_threads;
-                return;
-            }
-
-            session->m_session->wait_for_upload_complete_or_client_stopped();
-            --session->m_pending_upload_threads;
-            session->advance_state(lock, inactive);
-        }).detach();
+        });
     }
 
     bool revive_if_needed(std::unique_lock<std::mutex>& lock, SyncSession& session) const override
@@ -451,44 +440,26 @@ bool SyncSession::can_wait_for_network_completion() const
     return m_state == &State::active || m_state == &State::dying;
 }
 
-void SyncSession::wait_for_upload_completion()
+bool SyncSession::wait_for_upload_completion(std::function<void(std::error_code)> callback)
 {
     std::unique_lock<std::mutex> lock(m_state_mutex);
     if (can_wait_for_network_completion()) {
         REALM_ASSERT(m_session);
-        m_session->wait_for_upload_complete_or_client_stopped();
+        m_session->async_wait_for_upload_completion(std::move(callback));
+        return true;
     }
+    return false;
 }
 
-void SyncSession::wait_for_download_completion()
+bool SyncSession::wait_for_download_completion(std::function<void(std::error_code)> callback)
 {
     std::unique_lock<std::mutex> lock(m_state_mutex);
     if (can_wait_for_network_completion()) {
         REALM_ASSERT(m_session);
-        m_session->wait_for_download_complete_or_client_stopped();
+        m_session->async_wait_for_download_completion(std::move(callback));
+        return true;
     }
-}
-
-void SyncSession::wait_for_upload_completion(std::function<void()> callback)
-{
-    // FIXME: If the session is waiting for a token, the `wait_for_upload` should be deferred until the `bind()`
-    // instead of just calling the callback immediately.
-    REALM_ASSERT(shared_from_this());
-    std::thread([callback=std::move(callback), self=shared_from_this()]() {
-        self->wait_for_upload_completion();
-        callback();
-    }).detach();
-}
-
-void SyncSession::wait_for_download_completion(std::function<void()> callback)
-{
-    // FIXME: If the session is waiting for a token, the `wait_for_upload` should be deferred until the `bind()`
-    // instead of just calling the callback immediately.
-    REALM_ASSERT(shared_from_this());
-    std::thread([callback=std::move(callback), self=shared_from_this()]() {
-        self->wait_for_download_completion();
-        callback();
-    }).detach();
+    return false;
 }
 
 void SyncSession::refresh_access_token(std::string access_token, util::Optional<std::string> server_url)
@@ -522,10 +493,4 @@ SyncSession::PublicState SyncSession::state() const
         return PublicState::Error;
     }
     REALM_UNREACHABLE();
-}
-
-bool SyncSession::can_be_safely_destroyed() const
-{
-    std::unique_lock<std::mutex> lock(m_state_mutex);
-    return m_state == &State::inactive && m_pending_upload_threads == 0;
 }
